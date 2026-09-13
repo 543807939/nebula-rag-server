@@ -21,6 +21,19 @@ model User {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   knowledgeBases KnowledgeBase[]
+  refreshTokens  RefreshToken[]
+}
+
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  jti       String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  expiresAt DateTime // 过期时间
+  revokedAt DateTime? // 撤销时间
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model KnowledgeBase {
