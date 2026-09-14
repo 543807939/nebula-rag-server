@@ -66,6 +66,19 @@ export class UserService {
     return user;
   }
 
+  // 通过id查找用户信息 带密码
+  async findByIdWithPassword(id: number) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id,
+      },
+      omit: {
+        password: false,
+      },
+    });
+    return user;
+  }
+
   // 通过id查找用户
   async findById(id: number) {
     const user = await this.prisma.user.findUnique({

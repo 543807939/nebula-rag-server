@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { Cron, Interval } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 @Injectable()
 export class RefreshTokenCleanupService {
   private readonly logger = new Logger(RefreshTokenCleanupService.name);

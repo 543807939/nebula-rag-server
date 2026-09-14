@@ -1,4 +1,9 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { LoginDto } from './dto/login.dto.js';
 import { UserService } from '../user/user.service.js';
 import bcrypt from 'bcryptjs';
@@ -13,13 +18,14 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { randomUUID } from 'node:crypto';
 import { TOKEN_TYPE } from './constant/token-type.constant.js';
 import type { JwtPayload } from './types/jwt-payload.js';
+import { UpdatePasswordDto } from './dto/update-password.dto.js';
 
 const DUMMY_HASH =
   '$2b$10$3aK7MiC6PkbKl4mkJgPuX.rECVB9eVYgQWf3OUqSLALyvG5gef/1uv';
 
 @Injectable()
 export class AuthService {
-  private logger: Logger = new Logger(AuthService.name);
+  private readonly logger: Logger = new Logger(AuthService.name);
   private readonly accessSecret: string;
   private readonly refreshSecret: string;
 
@@ -187,9 +193,35 @@ export class AuthService {
     return { success: true };
   }
 
-  // 为未来改密码后全部登出预留
-  async logoutAll(userId: number) {
-    await this.prisma.refreshToken.updateMany({
+  // 修改密码
+  async updatePassword(userId: number, dto: UpdatePasswordDto) {
+    // 先看新旧密码对的上不
+    const user = await this.userService.findByIdWithPassword(userId);
+    if (!user) {
+      throw new BadRequestException('用户不存在');
+    }
+    const isValid = await bcrypt.compare(dto.oldPassword, user.password);
+    if (!isValid) {
+      throw new BadRequestException('旧密码错误');
+    }
+    const newPassword = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          password: newPassword,
+        },
+      }),
+      this.revokeAllUserTokensQuery(userId),
+    ]);
+
+    return {
+      success: true,
+    };
+  }
+
+  private revokeAllUserTokensQuery(userId: number) {
+    return this.prisma.refreshToken.updateMany({
       where: {
         userId,
         revokedAt: null,
@@ -198,6 +230,10 @@ export class AuthService {
         revokedAt: new Date(),
       },
     });
+  }
+
+  async logoutAll(userId: number) {
+    await this.revokeAllUserTokensQuery(userId);
     return { success: true };
   }
 }

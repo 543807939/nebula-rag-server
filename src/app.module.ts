@@ -10,6 +10,7 @@ import { AllExceptionFilter } from './common/filters/all-exception.filter.js';
 import { UserModule } from './user/user.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ScheduleModule } from '@nestjs/schedule';
+import { UploadModule } from './upload/upload.module.js';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     PrismaModule,
     UserModule,
     AuthModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [
