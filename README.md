@@ -1,114 +1,111 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Nebula RAG Server
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+多用户数据隔离的 AI 知识库问答服务：支持多格式文档上传、基于文档的问答、多轮对话。
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+设计文档见 [docs/DESIGN.md](docs/DESIGN.md)。
 
-## Description
+## 功能
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- 用户认证与角色权限（user / admin），access + refresh 双 token
+- 头像上传（本地磁盘 + 静态资源托管）
+- 知识库管理（多租户隔离）
+- 文档上传与解析（智谱文件解析 API）
+- 基于文档的问答（流式输出）
+- 多轮对话（指代消解 + 话题漂移检测）
 
-## Project setup
+## 技术栈
 
-```bash
-$ pnpm install
-```
+| 层     | 选型              |
+| ------ | ----------------- |
+| 框架   | NestJS 12         |
+| ORM    | Prisma 6          |
+| 数据库 | SQLite（开发）    |
+| 缓存   | Redis             |
+| LLM    | 智谱 GLM          |
+| 测试   | Vitest + Supertest |
 
-## Compile and run the project
+## 快速开始
 
-```bash
-# development
-$ pnpm run start
+### 环境要求
 
-# watch mode
-$ pnpm run start:dev
+- Node.js >= 20
+- pnpm
 
-# production mode
-$ pnpm run start:prod
-```
-
-## Run tests
+### 安装依赖
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm install
 ```
 
-## Deployment
+### 配置环境变量
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+复制 `.env.example` 为 `.env` 并按需修改：
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+cp .env.example .env
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+| 变量                 | 说明                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| `DATABASE_URL`       | SQLite 连接串。**相对路径是相对 `prisma/` 目录解析的**，`file:./dev.db` 实际落在 `prisma/dev.db` |
+| `JWT_ACCESS_SECRET`  | access token 签名密钥                                          |
+| `JWT_REFRESH_SECRET` | refresh token 签名密钥                                         |
+| `PORT`               | 服务端口，默认 3000                                            |
 
-## Observability
+### 初始化数据库
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+```bash
+pnpm prisma:migrate:dev
+```
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+### 启动
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+```bash
+pnpm start:dev
+```
 
-## Resources
+默认监听 `http://localhost:3000`，所有接口带 `/api` 前缀。
 
-Check out a few resources that may come in handy when working with NestJS:
+## 常用脚本
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+| 命令                  | 说明                                          |
+| --------------------- | --------------------------------------------- |
+| `pnpm start:dev`      | 开发模式（watch）                             |
+| `pnpm build`          | 构建（会先执行 `prisma generate`）            |
+| `pnpm start:prod`     | 以生产模式运行 `dist/main`                    |
+| `pnpm test`           | 单元测试                                      |
+| `pnpm test:e2e`       | e2e 测试（会重建 `prisma/test.db`）           |
+| `pnpm lint`           | oxlint                                        |
+| `pnpm prisma:studio`  | 打开 Prisma Studio                            |
 
-## Support
+> 注意：`pnpm start:dev` 运行时会锁住 Prisma 的 query engine，此时 `pnpm build` 里的 `prisma generate` 可能报 `EPERM`。先停掉 watch 再构建。
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## 目录结构
 
-## Stay in touch
+```
+src/
+  auth/         认证：登录 / 注册 / 刷新 / 登出、JWT 双 token、全局守卫
+  user/         用户资料
+  upload/       文件上传（头像）
+  common/       跨模块基础设施：装饰器、守卫、过滤器、拦截器、常量
+  prisma/       PrismaService
+  generated/    Prisma 生成的客户端（不入库）
+test/           e2e 测试
+docs/           设计文档
+prisma/         schema、迁移、本地数据库文件
+uploads/        上传文件落盘目录（不入库）
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## 测试
 
-## License
+e2e 使用独立的 SQLite 文件 `prisma/test.db`，每次运行前通过 `prisma db push --force-reset` 重建，不会影响开发数据。
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```bash
+pnpm test:e2e
+```
+
+> `main.ts` 里的全局配置（`ValidationPipe`、`setGlobalPrefix('api')`、静态资源托管）**不会被 e2e 自动继承**，`test/auth.e2e-spec.ts` 中手动补了一遍，新增 e2e 时注意同样处理。
+
+## 许可
+
+UNLICENSED（个人学习项目）
