@@ -4,7 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { requestIdMiddleware } from './common/middlewares/request-id.middleware.js';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { UPLOAD_ROOT } from './upload/upload.constant.js';
+import { UPLOAD_ROOT } from './common/constants/storage.constant.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

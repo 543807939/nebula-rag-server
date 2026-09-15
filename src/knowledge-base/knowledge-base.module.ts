@@ -7,6 +7,6 @@ import { KnowledgeBaseOwnerGuard } from './guards/knowledge-base-owner.guard.js'
   imports: [],
   controllers: [KnowledgeBaseController],
   providers: [KnowledgeBaseService, KnowledgeBaseOwnerGuard],
-  exports: [],
+  exports: [KnowledgeBaseOwnerGuard, KnowledgeBaseService],
 })
 export class KnowledgeBaseModule {}

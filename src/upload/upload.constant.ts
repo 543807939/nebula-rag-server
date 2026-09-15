@@ -1,7 +1,6 @@
 import { join } from 'path';
+import { UPLOAD_ROOT } from '../common/constants/storage.constant.js';
 
-// 文件上传根目录
-export const UPLOAD_ROOT = 'uploads';
 // 头像子目录
 export const AVATAR_DIR = 'avatars';
 //  头像在磁盘上的绝对目录
