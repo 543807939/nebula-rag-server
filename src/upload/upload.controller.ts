@@ -12,7 +12,7 @@ import { extname } from 'node:path';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import type { JwtPayload } from '../auth/types/jwt-payload.js';
 import { UploadService } from './upload.service.js';
-import { AVATAR_UPLOAD_DIR, AVATAR_URL_PREFIX } from './upload.constant.js';
+import { AVATAR_UPLOAD_DIR } from './upload.constant.js';
 
 const ALLOWED_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];

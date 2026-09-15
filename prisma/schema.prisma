@@ -48,6 +48,7 @@ model KnowledgeBase {
   conversations Conversation[]
   documents     Document[]
 
+  @@unique([userId, title])
   @@index([userId])
 }
 

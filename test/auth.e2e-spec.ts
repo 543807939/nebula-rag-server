@@ -1,7 +1,6 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from '../src/app.module.js';
+import { createTestApp } from './utils/create-test-app.js';
 
 describe('认证 + 用户 (e2e)', () => {
   let app: INestApplication;
@@ -15,25 +14,7 @@ describe('认证 + 用户 (e2e)', () => {
   let userId = 0;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-
-    // main.ts 在 e2e 里不会被执行，这些全局配置必须手动补一遍，
-    // 否则路由 404、DTO 校验全都不生效
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: false },
-      }),
-    );
-    app.setGlobalPrefix('api');
-
-    await app.init();
+    app = await createTestApp();
   });
 
   afterAll(async () => {

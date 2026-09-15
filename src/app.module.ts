@@ -11,6 +11,7 @@ import { UserModule } from './user/user.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ScheduleModule } from '@nestjs/schedule';
 import { UploadModule } from './upload/upload.module.js';
+import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UploadModule } from './upload/upload.module.js';
     UserModule,
     AuthModule,
     UploadModule,
+    KnowledgeBaseModule,
   ],
   controllers: [AppController],
   providers: [
