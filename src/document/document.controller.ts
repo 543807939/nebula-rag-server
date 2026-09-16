@@ -16,23 +16,21 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
-import { CurrentUser } from '../common/decorators/current-user.decorator.js';
-import type { JwtPayload } from '../auth/types/jwt-payload.js';
 import { QueryDocumentDto } from './dto/query-document.dto.js';
 import { KnowledgeBaseOwnerGuard } from '../knowledge-base/guards/knowledge-base-owner.guard.js';
 import { OwnerParam } from '../common/decorators/owner-param.decorator.js';
 import { DOCUMENT_UPLOAD_DIR } from './document.constant.js';
 
 const ALLOWED_EXT = [
-  'pdf',
-  'doc',
-  'docx',
-  'ppt',
-  'pptx',
-  'xls',
-  'xlsx',
-  'txt',
-  'md',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.ppt',
+  '.pptx',
+  '.xls',
+  '.xlsx',
+  '.txt',
+  '.md',
 ];
 
 @Controller('knowledge-bases/:kbId/documents')
@@ -69,11 +67,13 @@ export class DocumentController {
   @OwnerParam('kbId')
   @Post()
   public createDocument(
-    @CurrentUser() user: JwtPayload,
     @Param('kbId', ParseIntPipe) kbId: number,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.documentService.createDocument(user.sub, kbId, file);
+    if (!file) {
+      throw new BadRequestException('请上传文件');
+    }
+    return this.documentService.createDocument(kbId, file);
   }
 
   @UseGuards(KnowledgeBaseOwnerGuard)

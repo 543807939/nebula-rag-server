@@ -1,12 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { UserService } from '../user/user.service.js';
-import { basename, join, resolve, sep } from 'node:path';
 import {
   AVATAR_UPLOAD_DIR,
   AVATAR_URL_PREFIX,
   DEFAULT_AVATAR,
 } from './upload.constant.js';
-import { unlink } from 'node:fs/promises';
+import { removeFileSafely } from '../common/utils/remove-file-safely.util.js';
 
 @Injectable()
 export class UploadService {
@@ -32,21 +31,6 @@ export class UploadService {
     if (!avatar || avatar === DEFAULT_AVATAR) {
       return;
     }
-    const fileName = basename(avatar);
-    if (!fileName) {
-      return;
-    }
-    const target = resolve(join(AVATAR_UPLOAD_DIR, fileName));
-    if (!target.startsWith(AVATAR_UPLOAD_DIR + sep)) {
-      this.logger.warn(`文件路径不合法: ${target}`);
-      return;
-    }
-    try {
-      await unlink(target);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        this.logger.warn(`删除头像文件失败: ${target}`, error as Error);
-      }
-    }
+    await removeFileSafely(avatar, AVATAR_UPLOAD_DIR, this.logger);
   }
 }
