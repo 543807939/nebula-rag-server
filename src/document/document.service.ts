@@ -16,11 +16,15 @@ import { Prisma } from '../generated/prisma/client.js';
 import { PRISMA_ERROR } from '../common/constants/prisma-error.js';
 import { DOCUMENT_STATUS } from './types/document.type.js';
 import { removeFileSafely } from '../common/utils/remove-file-safely.util.js';
+import { DocumentPipelineService } from './pipeline/document-pipeline.service.js';
 
 @Injectable()
 export class DocumentService {
   private readonly logger: Logger = new Logger(DocumentService.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pipeline: DocumentPipelineService,
+  ) {}
 
   private handlePrismaError(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -37,7 +41,7 @@ export class DocumentService {
     const fileType = extname(filename).slice(1);
     const filePath = `${DOCUMENT_URL_PREFIX}/${filename}`;
     try {
-      return await this.prisma.document.create({
+      const res = await this.prisma.document.create({
         data: {
           fileName: originalname,
           fileType,
@@ -47,12 +51,20 @@ export class DocumentService {
           knowledgeBaseId: kbId,
         },
       });
+
+      // 落库成功后再触发后台处理：接口立即返回，向量化放到后台跑。
+      // run() 的契约是「不抛异常」，但这里仍挂一个 catch 兜底 —— 万一以后
+      // 有人改动破坏了那个契约，你得到的是一条日志，而不是进程崩溃。
+      void this.pipeline.run(res.id).catch((error: unknown) => {
+        this.logger.error(`文档流水线执行失败 id=${res.id}`, error);
+      });
+
+      return res;
     } catch (error) {
       this.logger.error('创建文档失败', error);
       await unlink(path).catch(() => {});
       throw new InternalServerErrorException('创建文档失败');
     }
-    // 如果是txt/md文件 就自己解析  如果不是走智谱的解析
   }
 
   async getDocumentList(kbId: number, query: QueryDocumentDto) {

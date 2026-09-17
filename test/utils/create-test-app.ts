@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import { join } from 'node:path';
 import { AppModule } from '../../src/app.module.js';
 import { UPLOAD_ROOT } from '../../src/common/constants/storage.constant.js';
@@ -13,12 +13,21 @@ import { UPLOAD_ROOT } from '../../src/common/constants/storage.constant.js';
  * 「所有路由 404」「DTO 校验不生效」或者「静态文件访问不到」这类问题。
  *
  * ⚠️ 以后改 main.ts 的全局配置（管道 / 前缀 / 静态资源 / 拦截器）时，这里要同步改。
+ *
+ * @param customize 可选的定制钩子，用来覆盖 provider。
+ *        典型用法是把外部依赖（LLM、第三方 API）换成假的：
+ *        `createTestApp((b) => b.overrideProvider(LlmService).useValue(fake))`
  */
-export async function createTestApp(): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
+export async function createTestApp(
+  customize?: (builder: TestingModuleBuilder) => TestingModuleBuilder,
+): Promise<INestApplication> {
+  let builder = Test.createTestingModule({ imports: [AppModule] });
 
+  if (customize) {
+    builder = customize(builder);
+  }
+
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>();
 
   app.useGlobalPipes(
