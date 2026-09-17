@@ -20,18 +20,7 @@ import { QueryDocumentDto } from './dto/query-document.dto.js';
 import { KnowledgeBaseOwnerGuard } from '../knowledge-base/guards/knowledge-base-owner.guard.js';
 import { OwnerParam } from '../common/decorators/owner-param.decorator.js';
 import { DOCUMENT_UPLOAD_DIR } from './document.constant.js';
-
-const ALLOWED_EXT = [
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.ppt',
-  '.pptx',
-  '.xls',
-  '.xlsx',
-  '.txt',
-  '.md',
-];
+import { ALLOWED_EXT } from './types/document-allowed-type-ext.type.js';
 
 @Controller('knowledge-bases/:kbId/documents')
 export class DocumentController {

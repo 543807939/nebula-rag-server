@@ -8,6 +8,8 @@ api约定
 URL 路径用 kebab-case + 复数
 JSON 字段用 camelCase
 
+模型 embedding固定使用embedding-3 2048维,换模型或维度会是历史向量失效
+
 ## 2. 核心功能
 
 - 用户认证与角色权限（user / admin）
@@ -145,12 +147,12 @@ conversationId Int
 
 双 token：access token + refresh token
 
-| 项       | access token   | refresh token      |
-| -------- | -------------- | ------------------ |
-| 载体     | JWT（无状态）  | JWT，但 jti 落库   |
-| 有效期   | 15 分钟        | 30 天              |
-| 校验方式 | 仅验签，不查库 | 验签 + 查库判撤销  |
-| 主动作废 | 不能           | 能（撤销 jti）     |
+| 项       | access token   | refresh token     |
+| -------- | -------------- | ----------------- |
+| 载体     | JWT（无状态）  | JWT，但 jti 落库  |
+| 有效期   | 15 分钟        | 30 天             |
+| 校验方式 | 仅验签，不查库 | 验签 + 查库判撤销 |
+| 主动作废 | 不能           | 能（撤销 jti）    |
 
 为什么这样分：access token 无状态、签发后无法主动作废，**它的 TTL 就是泄露之后的危害窗口**，所以必须短；refresh token 有状态、可以被吊销，风险可控，所以可以长。
 

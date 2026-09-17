@@ -13,6 +13,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { UploadModule } from './upload/upload.module.js';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module.js';
 import { DocumentModule } from './document/document.module.js';
+import { LlmModule } from './llm/llm.module.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { DocumentModule } from './document/document.module.js';
     UploadModule,
     KnowledgeBaseModule,
     DocumentModule,
+    LlmModule,
   ],
   controllers: [AppController],
   providers: [

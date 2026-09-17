@@ -1,0 +1,15 @@
+export const ALLOWED_EXT = [
+  '.pdf',
+  '.docx',
+  '.doc',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.csv',
+  '.txt',
+  '.md',
+];
