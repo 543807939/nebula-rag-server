@@ -5,6 +5,7 @@ import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module.js'
 import { ZhipuDocumentParserService } from './zhipu-document-parser.service.js';
 import { LlmModule } from '../llm/llm.module.js';
 import { DocumentPipelineService } from './pipeline/document-pipeline.service.js';
+import { DocumentCleanupService } from './document-cleanup.service.js';
 
 @Module({
   imports: [KnowledgeBaseModule, LlmModule],
@@ -13,6 +14,7 @@ import { DocumentPipelineService } from './pipeline/document-pipeline.service.js
     DocumentService,
     ZhipuDocumentParserService,
     DocumentPipelineService,
+    DocumentCleanupService,
   ],
 })
 export class DocumentModule {}

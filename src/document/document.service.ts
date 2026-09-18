@@ -134,4 +134,92 @@ export class DocumentService {
       this.handlePrismaError(error);
     }
   }
+
+  // 将十分钟还没解析完的文件状态设置为failed
+  async markStaleDocumentsFailed() {
+    await this.prisma.document.updateMany({
+      where: {
+        status: {
+          in: [DOCUMENT_STATUS.PROCESSING],
+        },
+        updatedAt: {
+          lt: new Date(Date.now() - 10 * 60 * 1000),
+        },
+      },
+      data: {
+        status: DOCUMENT_STATUS.FAILED,
+      },
+    });
+  }
+  // 处理状态为pending的文件
+  async requeuePendingDocuments() {
+    const documentIds = await this.prisma.document.findMany({
+      where: {
+        status: DOCUMENT_STATUS.PENDING,
+      },
+      select: {
+        id: true,
+      },
+    });
+    await this.prisma.document.updateMany({
+      where: {
+        id: {
+          in: documentIds.map(({ id }) => id),
+        },
+      },
+      data: {
+        status: DOCUMENT_STATUS.PROCESSING,
+      },
+    });
+    documentIds.forEach(({ id }) => {
+      void this.pipeline.run(id).catch((error: unknown) => {
+        this.logger.error(`文档流水线执行失败 id=${id}`, error);
+      });
+    });
+  }
+  // 批量删除processing和pending状态的文件的chunk 并重新发起转换
+  async recoverInterruptedDocuments() {
+    const documents = await this.prisma.document.findMany({
+      where: {
+        status: {
+          in: [DOCUMENT_STATUS.PROCESSING, DOCUMENT_STATUS.PENDING],
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    const ids = documents.map(({ id }) => id);
+    if (ids.length) {
+      try {
+        // 删除chunks并重置状态
+        await this.prisma.$transaction([
+          this.pipeline.deleteChunksQuery(ids),
+          this.prisma.document.updateMany({
+            where: {
+              id: {
+                in: ids,
+              },
+            },
+            data: {
+              status: DOCUMENT_STATUS.PENDING,
+            },
+          }),
+        ]);
+        this.logger.log(
+          `重置processing状态的文件的chunk成功,共处理${ids.length}个文件`,
+        );
+      } catch (error) {
+        this.logger.error('重置失败' + ids.join(', '), error);
+      }
+      // 重新转换
+      for (const id of ids) {
+        void this.pipeline
+          .run(id)
+          .catch((err) =>
+            this.logger.error(`文档流水线执行失败 id=${id}`, err),
+          );
+      }
+    }
+  }
 }

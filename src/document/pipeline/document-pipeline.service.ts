@@ -27,6 +27,9 @@ export class DocumentPipelineService {
         this.logger.warn(`文档不存在，跳过处理 id=${documentId}`);
         return;
       }
+
+      await this.deleteChunksQuery([documentId]);
+
       await this.prisma.document.update({
         where: { id: documentId },
         data: { status: DOCUMENT_STATUS.PROCESSING },
@@ -44,22 +47,33 @@ export class DocumentPipelineService {
         }
         // 向量化
         const BATCH = 16;
-        const vectors: number[][] = [];
         for (let i = 0; i < chunks.length; i += BATCH) {
-          vectors.push(
-            ...(await this.llmService.embed(chunks.slice(i, i + BATCH))),
-          );
+          const textBatch = chunks.slice(i, i + BATCH);
+          const vectors = await this.llmService.embed(textBatch);
+
+          if (vectors.length !== textBatch.length) {
+            throw new Error(
+              `向量条数与文本条数不一致：${vectors.length} != ${textBatch.length}`,
+            );
+          }
+
+          await this.prisma.chunk.createMany({
+            data: textBatch.map((content, j) => ({
+              documentId,
+              content,
+              embedding: JSON.stringify(vectors[j]),
+              chunkIndex: i + j,
+            })),
+          });
+
+          // 每次入库更新心跳
+          await this.prisma.document.update({
+            where: { id: documentId },
+            data: { status: DOCUMENT_STATUS.PROCESSING },
+          });
         }
 
-        await this.prisma.chunk.createMany({
-          data: chunks.map((chunk, index) => ({
-            documentId,
-            content: chunk,
-            embedding: JSON.stringify(vectors[index]),
-            chunkIndex: index,
-          })),
-        });
-        // 更新document的状态
+        // 全部入库之后 更新document的状态
         await this.prisma.document.update({
           where: {
             id: documentId,
@@ -97,5 +111,15 @@ export class DocumentPipelineService {
         },
       })
       .catch(() => {});
+  }
+
+  deleteChunksQuery(ids: number[]) {
+    return this.prisma.chunk.deleteMany({
+      where: {
+        documentId: {
+          in: ids,
+        },
+      },
+    });
   }
 }

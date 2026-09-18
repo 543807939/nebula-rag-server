@@ -12,7 +12,7 @@ export class ZhipuDocumentParserService {
     if (!ALLOWED_EXT.includes(type)) {
       throw new BadRequestException(`不支持${type}格式的文件`);
     }
-    const res = await fetch(
+    const _res = await fetch(
       `${this.config.get<string>('LLM_BASE_URL')}files/parser/create`,
       {
         method: 'POST',
