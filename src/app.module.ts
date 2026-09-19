@@ -15,6 +15,7 @@ import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module.js';
 import { DocumentModule } from './document/document.module.js';
 import { LlmModule } from './llm/llm.module.js';
 import { RetrievalModule } from './retrieval/retrieval.module.js';
+import { ConversationModule } from './conversation/conversation.module.js';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { RetrievalModule } from './retrieval/retrieval.module.js';
     DocumentModule,
     LlmModule,
     RetrievalModule,
+    ConversationModule,
   ],
   controllers: [AppController],
   providers: [
