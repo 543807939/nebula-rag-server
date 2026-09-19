@@ -49,157 +49,148 @@ const IRRELEVANT_QUERIES = [
   '请解释一下量子纠缠现象',
 ];
 
-describe.skipIf(!enabled)(
-  '检索阈值验证（需 RUN_REAL_LLM=1）',
-  () => {
-    let app: INestApplication;
+describe.skipIf(!enabled)('检索阈值验证（需 RUN_REAL_LLM=1）', () => {
+  let app: INestApplication;
 
-    beforeAll(async () => {
-      app = await createTestApp();
-    });
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
 
-    afterAll(async () => {
-      await app.close();
-    });
+  afterAll(async () => {
+    await app.close();
+  });
 
-    it(
-      '打印真实分数分布，给出阈值建议',
-      async () => {
-        const llm = app.get(LlmService);
+  it('打印真实分数分布，给出阈值建议', async () => {
+    const llm = app.get(LlmService);
 
-        // ---------- 1. 读文档 + 分块 ----------
-        const files = (await readdir(DOCS_DIR)).filter((f) =>
-          /\.(md|txt)$/i.test(f),
-        );
-        const docs = await Promise.all(
-          files.map(async (name) => {
-            const content = await readFile(join(DOCS_DIR, name), 'utf8');
-            return { name, content, chunks: chunkText(content) };
-          }),
-        );
-
-        const allChunks = docs.flatMap((doc) =>
-          doc.chunks.map((content) => ({ doc: doc.name, content })),
-        );
-
-        console.log(
-          `\n文档 ${docs.length} 份 / 共 ${allChunks.length} 块 ` +
-            `(${docs.map((d) => `${d.name}=${d.chunks.length}`).join(', ')})`,
-        );
-
-        // ---------- 2. 向量化所有 chunk ----------
-        const chunkVectors: number[][] = [];
-        for (let i = 0; i < allChunks.length; i += EMBED_BATCH) {
-          const batch = allChunks.slice(i, i + EMBED_BATCH);
-          chunkVectors.push(
-            ...(await llm.embed(batch.map((c) => c.content))),
-          );
-        }
-
-        // ---------- 3. 向量是否已 L2 归一化 ----------
-        // 如果范数都是 1，点积就等于余弦；不过这不该被「假设」，
-        // 我们的实现本来就除了模长，这里只是确认一下。
-        const norms = chunkVectors.map((v) =>
-          Math.sqrt(v.reduce((sum, x) => sum + x * x, 0)),
-        );
-        console.log(
-          `向量维度 ${chunkVectors[0].length}，范数 min=${Math.min(...norms).toFixed(6)} ` +
-            `max=${Math.max(...norms).toFixed(6)}`,
-        );
-
-        // ---------- 4. 让模型给每份文档生成「用户会问的问题」 ----------
-        // 比直接拿原文当查询更接近真实场景：真实查询不会和原文逐字重合。
-        const relevantQueries: { label: string; query: string }[] = [];
-        for (const doc of docs) {
-          for (let k = 0; k < QUESTIONS_PER_DOC; k++) {
-            const query = await llm.chat([
-              {
-                role: 'system',
-                content:
-                  '你是一个文档使用者。请根据给定文档提出一个你会向这个知识库提出的问题。' +
-                  '只输出问题本身，不要任何解释或前缀。',
-              },
-              { role: 'user', content: doc.content.slice(0, 2000) },
-            ]);
-            relevantQueries.push({
-              label: doc.name,
-              query: query.trim().replace(/\n/g, ' '),
-            });
-          }
-        }
-
-        // ---------- 5. 全部查询一次向量化 ----------
-        const queries = [
-          ...relevantQueries,
-          ...IRRELEVANT_QUERIES.map((q) => ({ label: '（无关）', query: q })),
-        ];
-        const queryVectors = await llm.embed(queries.map((q) => q.query));
-
-        // ---------- 6. 打印每个查询的 top5 ----------
-        const relevantBest: number[] = [];
-        const irrelevantBest: number[] = [];
-
-        for (let i = 0; i < queries.length; i++) {
-          const scored = chunkVectors
-            .map((vector, idx) => ({
-              score: cosineSimilarity(queryVectors[i], vector),
-              ...allChunks[idx],
-            }))
-            .sort((a, b) => b.score - a.score);
-
-          const isIrrelevant = queries[i].label === '（无关）';
-          if (isIrrelevant) {
-            irrelevantBest.push(scored[0]?.score ?? 0);
-          } else {
-            relevantBest.push(scored[0]?.score ?? 0);
-          }
-
-          console.log(
-            `\n[${queries[i].label}] ${queries[i].query.slice(0, 50)}`,
-          );
-          for (const hit of scored.slice(0, 5)) {
-            const mark = hit.doc === queries[i].label ? ' <== 同源文档' : '';
-            console.log(
-              `   ${hit.score.toFixed(4)}  ${hit.doc}${mark}`,
-            );
-          }
-        }
-
-        // ---------- 7. 汇总 ----------
-        const maxIrrelevant = Math.max(...irrelevantBest);
-        const minRelevant = Math.min(...relevantBest);
-
-        console.log('\n================ 汇总 ================');
-        console.log(`相关查询 ${relevantBest.length} 条，按文档分：`);
-
-        for (const doc of docs) {
-          const mine = relevantQueries
-            .map((q, idx) => ({ label: q.label, score: relevantBest[idx] }))
-            .filter((item) => item.label === doc.name)
-            .map((item) => item.score);
-          console.log(
-            `   ${doc.name.padEnd(26)} min=${Math.min(...mine).toFixed(4)} ` +
-              `max=${Math.max(...mine).toFixed(4)}`,
-          );
-        }
-
-        console.log(
-          `\n无关查询 ${irrelevantBest.length} 条最高分：` +
-            irrelevantBest.map((s) => s.toFixed(4)).join(', '),
-        );
-        console.log(`\n无关查询最高分的最大值：${maxIrrelevant.toFixed(4)}   <-- 阈值下界`);
-        console.log(`相关查询最高分的最小值：${minRelevant.toFixed(4)}   <-- 阈值上界`);
-        console.log(
-          maxIrrelevant < minRelevant
-            ? `\n>>> 建议阈值取 (${maxIrrelevant.toFixed(2)}, ${minRelevant.toFixed(2)}) 之间`
-            : `\n>>> ⚠️ 区间重叠：无关查询的分数已经超过部分相关查询，` +
-                `单纯靠阈值分不开，需要考虑 rerank`,
-        );
-
-        // 不断言具体数值 —— 分数会随模型版本变化，这里是给人看的
-        expect(chunkVectors.length).toBe(allChunks.length);
-      },
-      180_000,
+    // ---------- 1. 读文档 + 分块 ----------
+    const files = (await readdir(DOCS_DIR)).filter((f) =>
+      /\.(md|txt)$/i.test(f),
     );
-  },
-);
+    const docs = await Promise.all(
+      files.map(async (name) => {
+        const content = await readFile(join(DOCS_DIR, name), 'utf8');
+        return { name, content, chunks: chunkText(content) };
+      }),
+    );
+
+    const allChunks = docs.flatMap((doc) =>
+      doc.chunks.map((content) => ({ doc: doc.name, content })),
+    );
+
+    console.log(
+      `\n文档 ${docs.length} 份 / 共 ${allChunks.length} 块 ` +
+        `(${docs.map((d) => `${d.name}=${d.chunks.length}`).join(', ')})`,
+    );
+
+    // ---------- 2. 向量化所有 chunk ----------
+    const chunkVectors: number[][] = [];
+    for (let i = 0; i < allChunks.length; i += EMBED_BATCH) {
+      const batch = allChunks.slice(i, i + EMBED_BATCH);
+      chunkVectors.push(...(await llm.embed(batch.map((c) => c.content))));
+    }
+
+    // ---------- 3. 向量是否已 L2 归一化 ----------
+    // 如果范数都是 1，点积就等于余弦；不过这不该被「假设」，
+    // 我们的实现本来就除了模长，这里只是确认一下。
+    const norms = chunkVectors.map((v) =>
+      Math.sqrt(v.reduce((sum, x) => sum + x * x, 0)),
+    );
+    console.log(
+      `向量维度 ${chunkVectors[0].length}，范数 min=${Math.min(...norms).toFixed(6)} ` +
+        `max=${Math.max(...norms).toFixed(6)}`,
+    );
+
+    // ---------- 4. 让模型给每份文档生成「用户会问的问题」 ----------
+    // 比直接拿原文当查询更接近真实场景：真实查询不会和原文逐字重合。
+    const relevantQueries: { label: string; query: string }[] = [];
+    for (const doc of docs) {
+      for (let k = 0; k < QUESTIONS_PER_DOC; k++) {
+        const query = await llm.chat([
+          {
+            role: 'system',
+            content:
+              '你是一个文档使用者。请根据给定文档提出一个你会向这个知识库提出的问题。' +
+              '只输出问题本身，不要任何解释或前缀。',
+          },
+          { role: 'user', content: doc.content.slice(0, 2000) },
+        ]);
+        relevantQueries.push({
+          label: doc.name,
+          query: query.trim().replace(/\n/g, ' '),
+        });
+      }
+    }
+
+    // ---------- 5. 全部查询一次向量化 ----------
+    const queries = [
+      ...relevantQueries,
+      ...IRRELEVANT_QUERIES.map((q) => ({ label: '（无关）', query: q })),
+    ];
+    const queryVectors = await llm.embed(queries.map((q) => q.query));
+
+    // ---------- 6. 打印每个查询的 top5 ----------
+    const relevantBest: number[] = [];
+    const irrelevantBest: number[] = [];
+
+    for (let i = 0; i < queries.length; i++) {
+      const scored = chunkVectors
+        .map((vector, idx) => ({
+          score: cosineSimilarity(queryVectors[i], vector),
+          ...allChunks[idx],
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      const isIrrelevant = queries[i].label === '（无关）';
+      if (isIrrelevant) {
+        irrelevantBest.push(scored[0]?.score ?? 0);
+      } else {
+        relevantBest.push(scored[0]?.score ?? 0);
+      }
+
+      console.log(`\n[${queries[i].label}] ${queries[i].query.slice(0, 50)}`);
+      for (const hit of scored.slice(0, 5)) {
+        const mark = hit.doc === queries[i].label ? ' <== 同源文档' : '';
+        console.log(`   ${hit.score.toFixed(4)}  ${hit.doc}${mark}`);
+      }
+    }
+
+    // ---------- 7. 汇总 ----------
+    const maxIrrelevant = Math.max(...irrelevantBest);
+    const minRelevant = Math.min(...relevantBest);
+
+    console.log('\n================ 汇总 ================');
+    console.log(`相关查询 ${relevantBest.length} 条，按文档分：`);
+
+    for (const doc of docs) {
+      const mine = relevantQueries
+        .map((q, idx) => ({ label: q.label, score: relevantBest[idx] }))
+        .filter((item) => item.label === doc.name)
+        .map((item) => item.score);
+      console.log(
+        `   ${doc.name.padEnd(26)} min=${Math.min(...mine).toFixed(4)} ` +
+          `max=${Math.max(...mine).toFixed(4)}`,
+      );
+    }
+
+    console.log(
+      `\n无关查询 ${irrelevantBest.length} 条最高分：` +
+        irrelevantBest.map((s) => s.toFixed(4)).join(', '),
+    );
+    console.log(
+      `\n无关查询最高分的最大值：${maxIrrelevant.toFixed(4)}   <-- 阈值下界`,
+    );
+    console.log(
+      `相关查询最高分的最小值：${minRelevant.toFixed(4)}   <-- 阈值上界`,
+    );
+    console.log(
+      maxIrrelevant < minRelevant
+        ? `\n>>> 建议阈值取 (${maxIrrelevant.toFixed(2)}, ${minRelevant.toFixed(2)}) 之间`
+        : `\n>>> ⚠️ 区间重叠：无关查询的分数已经超过部分相关查询，` +
+            `单纯靠阈值分不开，需要考虑 rerank`,
+    );
+
+    // 不断言具体数值 —— 分数会随模型版本变化，这里是给人看的
+    expect(chunkVectors.length).toBe(allChunks.length);
+  }, 180_000);
+});

@@ -139,78 +139,74 @@ describe.skipIf(!enabled)('查询改写 prompt 验证（需 RUN_REAL_LLM=1）', 
     await app.close();
   });
 
-  it(
-    '逐条打印真实改写结果',
-    async () => {
-      const llm = app.get(LlmService);
-      const failed: { index: number; name: string; output: string }[] = [];
+  it('逐条打印真实改写结果', async () => {
+    const llm = app.get(LlmService);
+    const failed: { index: number; name: string; output: string }[] = [];
 
-      for (let i = 0; i < CASES.length; i++) {
-        const testCase = CASES[i];
+    for (let i = 0; i < CASES.length; i++) {
+      const testCase = CASES[i];
 
-        const history: ChatMessage[] = testCase.history.map((m) => ({
-          role:
-            m.role === 'assistant'
-              ? CHAT_ROLE_TYPE.ASSISTANT
-              : CHAT_ROLE_TYPE.USER,
-          content: m.content,
-        }));
+      const history: ChatMessage[] = testCase.history.map((m) => ({
+        role:
+          m.role === 'assistant'
+            ? CHAT_ROLE_TYPE.ASSISTANT
+            : CHAT_ROLE_TYPE.USER,
+        content: m.content,
+      }));
 
-        // 调用形状和 ChatService.rewriteQuery 保持一致：
-        // 同一条 system prompt、同样的 temperature: 0
-        const raw = await llm.chat(
-          [
-            {
-              role: CHAT_ROLE_TYPE.SYSTEM,
-              content: REWRITE_QUERY_SYSTEM_PROMPT,
-            },
-            ...history,
-            { role: CHAT_ROLE_TYPE.USER, content: testCase.input },
-          ],
-          { temperature: 0 },
-        );
+      // 调用形状和 ChatService.rewriteQuery 保持一致：
+      // 同一条 system prompt、同样的 temperature: 0
+      const raw = await llm.chat(
+        [
+          {
+            role: CHAT_ROLE_TYPE.SYSTEM,
+            content: REWRITE_QUERY_SYSTEM_PROMPT,
+          },
+          ...history,
+          { role: CHAT_ROLE_TYPE.USER, content: testCase.input },
+        ],
+        { temperature: 0 },
+      );
 
-        // 这里只 trim。正式代码里还有去引号/去前缀的清洗，
-        // 但那些只影响首尾字符，不影响下面的判断。
-        const output = raw.trim();
-        const ok = testCase.pass(output, testCase.input);
+      // 这里只 trim。正式代码里还有去引号/去前缀的清洗，
+      // 但那些只影响首尾字符，不影响下面的判断。
+      const output = raw.trim();
+      const ok = testCase.pass(output, testCase.input);
 
-        console.log(
-          `\n${'─'.repeat(70)}\n[${i + 1}/${CASES.length}] ` +
-            `${testCase.critical ? '【关键】' : ''}${testCase.name}`,
-        );
-        if (history.length) {
-          console.log(`  上文：${history.map((m) => m.content).join(' → ')}`);
-        }
-        console.log(`  输入：${testCase.input}`);
-        console.log(`  输出：${output}`);
-        console.log(`  期望：${testCase.expectation}`);
-        console.log(`  结果：${ok ? '✓ 通过' : '✗ 未通过'}`);
-
-        if (!ok) {
-          failed.push({ index: i + 1, name: testCase.name, output });
-        }
+      console.log(
+        `\n${'─'.repeat(70)}\n[${i + 1}/${CASES.length}] ` +
+          `${testCase.critical ? '【关键】' : ''}${testCase.name}`,
+      );
+      if (history.length) {
+        console.log(`  上文：${history.map((m) => m.content).join(' → ')}`);
       }
+      console.log(`  输入：${testCase.input}`);
+      console.log(`  输出：${output}`);
+      console.log(`  期望：${testCase.expectation}`);
+      console.log(`  结果：${ok ? '✓ 通过' : '✗ 未通过'}`);
 
-      const passed = CASES.length - failed.length;
-      console.log(`\n${'='.repeat(70)}`);
-      console.log(`汇总：${passed}/${CASES.length} 通过`);
-
-      if (failed.length) {
-        console.log('\n未通过的用例：');
-        for (const item of failed) {
-          console.log(`  [${item.index}] ${item.name}`);
-          console.log(`      输出：${item.output}`);
-        }
-        console.log(
-          '\n⚠️ 若「关键」用例失败，说明改写会把闲聊带偏 —— 那类 query 会因为' +
-            '带上话题词而误命中检索，绕过「检索为空」的兜底。',
-        );
+      if (!ok) {
+        failed.push({ index: i + 1, name: testCase.name, output });
       }
+    }
 
-      // 不对模型行为做硬断言（会随版本波动），这里只保证确实跑完了
-      expect(passed).toBeGreaterThanOrEqual(0);
-    },
-    180_000,
-  );
+    const passed = CASES.length - failed.length;
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`汇总：${passed}/${CASES.length} 通过`);
+
+    if (failed.length) {
+      console.log('\n未通过的用例：');
+      for (const item of failed) {
+        console.log(`  [${item.index}] ${item.name}`);
+        console.log(`      输出：${item.output}`);
+      }
+      console.log(
+        '\n⚠️ 若「关键」用例失败，说明改写会把闲聊带偏 —— 那类 query 会因为' +
+          '带上话题词而误命中检索，绕过「检索为空」的兜底。',
+      );
+    }
+
+    // 不对模型行为做硬断言（会随版本波动），这里只保证确实跑完了
+    expect(passed).toBeGreaterThanOrEqual(0);
+  }, 180_000);
 });

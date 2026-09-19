@@ -30,7 +30,7 @@ describe.skipIf(process.env.RUN_REAL_LLM !== '1')(
 
       expect(vectors).toHaveLength(1);
       expect(vectors[0]).toHaveLength(
-    Number(config.get('LLM_EMBEDDING_DIMENSIONS')),
+        Number(config.get('LLM_EMBEDDING_DIMENSIONS')),
       );
       expect(typeof vectors[0][0]).toBe('number');
     });

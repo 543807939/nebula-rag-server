@@ -57,9 +57,15 @@ describe('会话与消息 (e2e)', () => {
       .set(auth(token));
 
     if (res.status >= 300) {
-      throw new Error(`创建会话失败: ${res.status} ${JSON.stringify(res.body)}`);
+      throw new Error(
+        `创建会话失败: ${res.status} ${JSON.stringify(res.body)}`,
+      );
     }
-    return res.body.data as { id: number; title: string; knowledgeBaseId: number };
+    return res.body.data as {
+      id: number;
+      title: string;
+      knowledgeBaseId: number;
+    };
   }
 
   function listConversations(token: string, kbId: number, qs = '') {
@@ -87,9 +93,7 @@ describe('会话与消息 (e2e)', () => {
     conversationId: number,
   ) {
     return request(server)
-      .delete(
-        `/api/knowledge-bases/${kbId}/conversations/${conversationId}`,
-      )
+      .delete(`/api/knowledge-bases/${kbId}/conversations/${conversationId}`)
       .set(auth(token));
   }
 
@@ -184,13 +188,17 @@ describe('会话与消息 (e2e)', () => {
       await newConversation(tokenA, kb);
     }
 
-    const first = await listConversations(tokenA, kb, '?page=1&size=2').expect(200);
+    const first = await listConversations(tokenA, kb, '?page=1&size=2').expect(
+      200,
+    );
     expect(first.body.data.list).toHaveLength(2);
     // 关键：写成 list.length 的话这里是 2 和 1，前端会以为只有一页
     expect(first.body.data.total).toBe(3);
     expect(first.body.data.totalPage).toBe(2);
 
-    const second = await listConversations(tokenA, kb, '?page=2&size=2').expect(200);
+    const second = await listConversations(tokenA, kb, '?page=2&size=2').expect(
+      200,
+    );
     expect(second.body.data.list).toHaveLength(1);
     expect(second.body.data.total).toBe(3);
   });
@@ -229,7 +237,9 @@ describe('会话与消息 (e2e)', () => {
     const conv = await newConversation(tokenA, kbA);
     await seedMessages(conv.id, ['第 1 条', '第 2 条', '第 3 条']);
 
-    const res = await listMessages(tokenA, kbA, conv.id, '?limit=2').expect(200);
+    const res = await listMessages(tokenA, kbA, conv.id, '?limit=2').expect(
+      200,
+    );
 
     // 要么是「最新的 2 条且正序」，要么是「最旧的 2 条」——
     // 守住的是「先倒序取最近，再 reverse 回来」。
@@ -240,10 +250,18 @@ describe('会话与消息 (e2e)', () => {
 
   it('用返回的第一条 id 当 beforeId 能继续往上翻，翻到底 hasMore 变 false', async () => {
     const conv = await newConversation(tokenA, kbA);
-    await seedMessages(conv.id, ['第 1 条', '第 2 条', '第 3 条', '第 4 条', '第 5 条']);
+    await seedMessages(conv.id, [
+      '第 1 条',
+      '第 2 条',
+      '第 3 条',
+      '第 4 条',
+      '第 5 条',
+    ]);
 
     // 首屏：最近 2 条
-    const page1 = await listMessages(tokenA, kbA, conv.id, '?limit=2').expect(200);
+    const page1 = await listMessages(tokenA, kbA, conv.id, '?limit=2').expect(
+      200,
+    );
     expect(contentsOf(page1)).toEqual(['第 4 条', '第 5 条']);
     expect(page1.body.data.hasMore).toBe(true);
 
@@ -276,7 +294,9 @@ describe('会话与消息 (e2e)', () => {
     const conv = await newConversation(tokenA, kbA);
     await seedMessages(conv.id, ['第 1 条', '第 2 条', '第 3 条']);
 
-    const page1 = await listMessages(tokenA, kbA, conv.id, '?limit=2').expect(200);
+    const page1 = await listMessages(tokenA, kbA, conv.id, '?limit=2').expect(
+      200,
+    );
     expect(contentsOf(page1)).toEqual(['第 2 条', '第 3 条']);
     const cursor = firstIdOf(page1);
 

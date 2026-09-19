@@ -180,9 +180,7 @@ describe('文档流水线 (e2e)', () => {
 
     expect(chunks.length).toBeGreaterThan(1);
     // chunkIndex 必须从 0 开始连续，不能有洞
-    expect(chunks.map((c) => c.chunkIndex)).toEqual(
-      chunks.map((_, i) => i),
-    );
+    expect(chunks.map((c) => c.chunkIndex)).toEqual(chunks.map((_, i) => i));
     // 每个段落都要完整落在某个块里 —— 不允许丢内容
     for (const paragraph of paragraphs) {
       expect(chunks.some((c) => c.content.includes(paragraph))).toBe(true);

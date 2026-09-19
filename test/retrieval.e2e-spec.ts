@@ -110,7 +110,11 @@ describe('检索 (e2e)', () => {
       })
       .expect(201);
 
-    const data = res.body.data as { id: number; fileName: string; filePath: string };
+    const data = res.body.data as {
+      id: number;
+      fileName: string;
+      filePath: string;
+    };
     createdFilePaths.push(data.filePath);
     return data;
   }

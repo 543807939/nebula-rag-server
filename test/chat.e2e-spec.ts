@@ -132,8 +132,7 @@ describe('问答 (e2e)', () => {
       .map((block) => block.trim())
       .filter((block) => block.startsWith('data:'))
       .map(
-        (block) =>
-          JSON.parse(block.slice('data:'.length).trim()) as ChatEvent,
+        (block) => JSON.parse(block.slice('data:'.length).trim()) as ChatEvent,
       );
   }
 
