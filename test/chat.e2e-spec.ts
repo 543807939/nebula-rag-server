@@ -3,11 +3,12 @@ import { unlink } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { basename, join } from 'node:path';
 import request from 'supertest';
-import { DOCUMENT_UPLOAD_DIR } from '../src/document/document.constant.js';
-import { DOCUMENT_STATUS } from '../src/document/types/document.type.js';
 import { ANSWER_SYSTEM_PROMPT } from '../src/chat/constants/answer.prompt.js';
 import { NO_RESULT_SYSTEM_PROMPT } from '../src/chat/constants/no-result-system.prompt.js';
 import { REWRITE_QUERY_SYSTEM_PROMPT } from '../src/chat/constants/rewrite-query.prompt.js';
+import type { ChatEvent } from '../src/chat/types/chat.type.js';
+import { DOCUMENT_UPLOAD_DIR } from '../src/document/document.constant.js';
+import { DOCUMENT_STATUS } from '../src/document/types/document.type.js';
 import { LlmService } from '../src/llm/llm.service.js';
 import type { ChatMessage } from '../src/llm/types/llm.type.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
@@ -27,8 +28,11 @@ const DOC_TEXT = CONCEPTS.map((c) => `${c}：${'x'.repeat(390)}`).join('\n\n');
 
 /** 改写分支的固定返回值 —— 故意带上「苹果」，这样它仍能召回对应片段 */
 const REWRITE_MARKER = '苹果的改写标记';
-const ANSWER_MARKER = '这是模型生成的回答';
 const FALLBACK_MARKER = '我是知识库问答助手，你可以问我文档里的内容';
+
+/** 回答切成 3 段吐 —— 用来验证「前端真的能拿到增量」 */
+const ANSWER_PIECES = ['这是', '模型生成的', '回答'];
+const ANSWER_MARKER = ANSWER_PIECES.join('');
 
 /**
  * 模拟「模型认得闲聊、原样返回」这个行为（对应 prompt 规则 6）。
@@ -48,12 +52,15 @@ describe('问答 (e2e)', () => {
 
   const stamp = Date.now();
   let token = '';
+  /** 放文档的知识库 */
   let kbId = 0;
+  /** 空的知识库，用来构造「会话不属于该知识库」 */
+  let emptyKbId = 0;
   let docFileName = '';
 
   const createdFilePaths: string[] = [];
 
-  /** 记录每次 chat 收到的 system prompt —— 用来断言「走了哪条分支」 */
+  /** 记录每次 chat / chatStream 收到的 system prompt —— 用来断言「走了哪条分支」 */
   const chatSystemPrompts: string[] = [];
   /** 记录每次 embed 收到的文本 —— 用来断言「送去检索的 query 是哪一个」 */
   const embeddedTexts: string[] = [];
@@ -61,7 +68,7 @@ describe('问答 (e2e)', () => {
   let rewriteShouldFail = false;
 
   /**
-   * 假 LLM 必须按输入区分返回，否则编排的三个分支根本走不到。
+   * 假 LLM 必须按输入区分返回，否则编排的几个分支根本走不到。
    * 判别方式是看第一条 system 消息是不是那三个 prompt 之一。
    */
   const fakeLlm = {
@@ -84,6 +91,15 @@ describe('问答 (e2e)', () => {
       }
       return Promise.resolve(ANSWER_MARKER);
     },
+    chatStream: async function* (messages: ChatMessage[]) {
+      const systemPrompt = messages[0]?.content ?? '';
+      chatSystemPrompts.push(systemPrompt);
+
+      // 分多段吐出，而不是一次性给完 —— 否则测不出「流式」这件事
+      for (const piece of ANSWER_PIECES) {
+        yield piece;
+      }
+    },
     embed: (texts: string[]) => {
       embeddedTexts.push(...texts);
       return Promise.resolve(texts.map(fakeVector));
@@ -99,9 +115,9 @@ describe('问答 (e2e)', () => {
   }
 
   /** 每个用例用自己的会话，避免互相污染历史 */
-  async function newConversation() {
+  async function newConversation(targetKbId: number = kbId) {
     const res = await request(server)
-      .post(`/api/knowledge-bases/${kbId}/conversations`)
+      .post(`/api/knowledge-bases/${targetKbId}/conversations`)
       .set(auth());
     if (res.status >= 300) {
       throw new Error(`创建会话失败: ${res.status}`);
@@ -109,15 +125,48 @@ describe('问答 (e2e)', () => {
     return res.body.data.id as number;
   }
 
+  /** 把 SSE 响应体解析成帧列表：按空行切，剥掉每帧的 "data: " */
+  function parseSse(body: string): ChatEvent[] {
+    return body
+      .split('\n\n')
+      .map((block) => block.trim())
+      .filter((block) => block.startsWith('data:'))
+      .map(
+        (block) =>
+          JSON.parse(block.slice('data:'.length).trim()) as ChatEvent,
+      );
+  }
+
+  function answerOf(frames: ChatEvent[]): string {
+    return frames
+      .filter(
+        (f): f is Extract<ChatEvent, { type: 'delta' }> => f.type === 'delta',
+      )
+      .map((f) => f.text)
+      .join('');
+  }
+
+  function sourcesOf(frames: ChatEvent[]) {
+    return frames.find((f) => f.type === 'sources')?.sources ?? [];
+  }
+
+  function messageIdOf(frames: ChatEvent[]) {
+    return frames.find((f) => f.type === 'done')?.messageId;
+  }
+
   /**
-   * 提问。这里只要求 2xx，不硬断言具体状态码 ——
-   * 状态码契约由单独一条用例守，否则一个状态码改动会把所有用例连带弄红，
-   * 看不出真正的问题在哪。
+   * 提问并返回解析好的帧。
+   * 只要求 2xx，不硬断言状态码 —— 契约由单独一条用例守，
+   * 否则一个状态码改动会把所有用例连带弄红。
    */
-  async function send(conversationId: number, question: string) {
+  async function send(
+    conversationId: number,
+    question: string,
+    targetKbId: number = kbId,
+  ) {
     const res = await request(server)
       .post(
-        `/api/knowledge-bases/${kbId}/conversations/${conversationId}/messages`,
+        `/api/knowledge-bases/${targetKbId}/conversations/${conversationId}/messages`,
       )
       .set(auth())
       .send({ question });
@@ -125,7 +174,7 @@ describe('问答 (e2e)', () => {
     if (res.status >= 300) {
       throw new Error(`提问失败: ${res.status} ${JSON.stringify(res.body)}`);
     }
-    return res;
+    return { res, frames: parseSse(res.text) };
   }
 
   async function waitDone(documentId: number) {
@@ -167,6 +216,13 @@ describe('问答 (e2e)', () => {
       .expect(201);
     kbId = kb.body.data.id;
 
+    const emptyKb = await request(server)
+      .post('/api/knowledge-bases')
+      .set(auth())
+      .send({ title: `问答空库-${stamp}` })
+      .expect(201);
+    emptyKbId = emptyKb.body.data.id;
+
     const doc = await request(server)
       .post(`/api/knowledge-bases/${kbId}/documents`)
       .set(auth())
@@ -195,7 +251,7 @@ describe('问答 (e2e)', () => {
     rewriteShouldFail = false;
   }
 
-  // ---------------- 鉴权 ----------------
+  // ---------------- 传输层 ----------------
 
   it('未带 token 提问返回 401', async () => {
     const conversationId = await newConversation();
@@ -207,18 +263,52 @@ describe('问答 (e2e)', () => {
       .expect(401);
   });
 
-  it('提问返回 200，而不是 201', async () => {
+  it('响应是 SSE：200 + text/event-stream', async () => {
     // 虽然内部会往 Message 表插两条记录，但响应表达的是「本次问答的结果」，
-    // 客户端不会拿一个 URL 去单独访问这条消息 —— 所以是 200 不是 201。
-    // 换 SSE 之后更是如此（流式响应没有 201 的语义位置）。
+    // 而且是流式响应 —— 没有 201 的语义位置
     const conversationId = await newConversation();
-    await request(server)
+    const res = await request(server)
       .post(
         `/api/knowledge-bases/${kbId}/conversations/${conversationId}/messages`,
       )
       .set(auth())
       .send({ question: '苹果是什么' })
       .expect(200);
+
+    expect(res.headers['content-type']).toContain('text/event-stream');
+  });
+
+  it('会话不属于该知识库时返回 404，而不是 200 + error 帧', async () => {
+    // 这条守着 prepare / stream 的拆分：
+    // 如果归属校验跑到 res.flushHeaders() 之后，响应头已经发出去，
+    // 就只能返回 200 + 一帧 error —— 前端拿不到正确的错误语义
+    const conversationId = await newConversation(emptyKbId);
+
+    await request(server)
+      .post(
+        `/api/knowledge-bases/${kbId}/conversations/${conversationId}/messages`,
+      )
+      .set(auth())
+      .send({ question: '苹果是什么' })
+      .expect(404);
+  });
+
+  // ---------------- 流式行为 ----------------
+
+  it('回答是分多帧推来的，拼接后等于完整回答', async () => {
+    resetRecorders();
+    const conversationId = await newConversation();
+
+    const { frames } = await send(conversationId, '苹果是什么');
+
+    // 帧序：sources → delta × N → done
+    expect(frames[0].type).toBe('sources');
+    expect(frames[frames.length - 1].type).toBe('done');
+
+    const deltas = frames.filter((f) => f.type === 'delta');
+    // 关键：只吐一帧就等于没做流式。fake 分 3 段，这里必须也是 3 帧
+    expect(deltas).toHaveLength(ANSWER_PIECES.length);
+    expect(answerOf(frames)).toBe(ANSWER_MARKER);
   });
 
   // ---------------- 正常问答 ----------------
@@ -227,9 +317,9 @@ describe('问答 (e2e)', () => {
     resetRecorders();
     const conversationId = await newConversation();
 
-    const res = await send(conversationId, '苹果是什么');
+    const { frames } = await send(conversationId, '苹果是什么');
 
-    expect(res.body.data.content).toBe(ANSWER_MARKER);
+    expect(answerOf(frames)).toBe(ANSWER_MARKER);
 
     const messages = await prisma.message.findMany({
       where: { conversationId },
@@ -238,20 +328,16 @@ describe('问答 (e2e)', () => {
     expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
     expect(messages[0].content).toBe('苹果是什么');
     expect(messages[1].content).toBe(ANSWER_MARKER);
+    // done 帧里的 id 就是落库那条助手消息
+    expect(messages[1].id).toBe(messageIdOf(frames));
   });
 
   it('sources 存的是快照：带上当时的原文、文件名和分数', async () => {
     resetRecorders();
     const conversationId = await newConversation();
 
-    const res = await send(conversationId, '苹果是什么');
-    const sources = res.body.data.sources as {
-      fileName: string;
-      chunkIndex: number;
-      content: string;
-      score: number;
-      documentId: number;
-    }[];
+    const { frames } = await send(conversationId, '苹果是什么');
+    const sources = sourcesOf(frames);
 
     expect(sources.length).toBeGreaterThan(0);
     expect(sources[0].fileName).toBe(docFileName);
@@ -260,6 +346,13 @@ describe('问答 (e2e)', () => {
     // 文档被删或重传后，引用会指向别的内容，快照不会
     expect(sources[0].content).toContain('苹果');
     expect(typeof sources[0].score).toBe('number');
+
+    // SSE 推的 sources 和落库的 sources 必须是同一份结构 ——
+    // 前端会从两个地方拿（实时流 / 重新打开会话读历史），不一致就要写两套解析
+    const saved = await prisma.message.findFirst({
+      where: { conversationId, role: 'assistant' },
+    });
+    expect(saved?.sources).toEqual(sources);
   });
 
   // ---------------- 查询改写 ----------------
@@ -280,7 +373,6 @@ describe('问答 (e2e)', () => {
   it('有历史时会做改写，且改写后的 query 真的被送去检索', async () => {
     resetRecorders();
     const conversationId = await newConversation();
-    // 先制造一轮历史
     await send(conversationId, '苹果是什么');
 
     resetRecorders();
@@ -304,9 +396,9 @@ describe('问答 (e2e)', () => {
     rewriteShouldFail = true;
 
     // 没崩，正常返回
-    const res = await send(conversationId, '苹果的价格');
+    const { frames } = await send(conversationId, '苹果的价格');
 
-    expect(res.body.data.content).toBe(ANSWER_MARKER);
+    expect(answerOf(frames)).toBe(ANSWER_MARKER);
     // 降级生效：检索用的是原句，不是改写标记
     expect(embeddedTexts).toContain('苹果的价格');
     expect(embeddedTexts).not.toContain(REWRITE_MARKER);
@@ -323,7 +415,7 @@ describe('问答 (e2e)', () => {
     await send(conversationId, '苹果是什么');
 
     resetRecorders();
-    const res = await send(conversationId, '在吗');
+    const { frames } = await send(conversationId, '在吗');
 
     // 有历史，所以改写确实被调用了
     expect(chatSystemPrompts[0]).toBe(REWRITE_QUERY_SYSTEM_PROMPT);
@@ -336,7 +428,7 @@ describe('问答 (e2e)', () => {
     expect(
       chatSystemPrompts.some((p) => p.includes(ANSWER_SYSTEM_PROMPT)),
     ).toBe(false);
-    expect(res.body.data.content).toBe(FALLBACK_MARKER);
+    expect(answerOf(frames)).toBe(FALLBACK_MARKER);
   });
 
   // ---------------- 检索为空 ----------------
@@ -345,7 +437,7 @@ describe('问答 (e2e)', () => {
     resetRecorders();
     const conversationId = await newConversation();
 
-    const res = await send(conversationId, '完全无关的一句话');
+    const { frames } = await send(conversationId, '完全无关的一句话');
 
     // 断言「没走生成分支」而不是「没调用模型」——
     // 后者在换成固定文案版时会假红，前者两种实现下都成立
@@ -354,8 +446,8 @@ describe('问答 (e2e)', () => {
     ).toBe(false);
     // 走的是兜底分支
     expect(chatSystemPrompts).toContain(NO_RESULT_SYSTEM_PROMPT);
-    expect(res.body.data.content).toBe(FALLBACK_MARKER);
-    expect(res.body.data.sources).toEqual([]);
+    expect(answerOf(frames)).toBe(FALLBACK_MARKER);
+    expect(sourcesOf(frames)).toEqual([]);
 
     // 兜底回复也要落库，否则下一轮历史里少一条
     const messages = await prisma.message.findMany({

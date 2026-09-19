@@ -356,6 +356,29 @@ refreshToken → 验签 → 校验 tokenType 与 jti 是否存在 → 判断 `re
   测它等于自问自答），只能用 `test/rewrite.manual.e2e-spec.ts` 在真实模型上看输出。
   那个文件同时也是这个 prompt 的**回归样本集** —— 线上遇到一次"改写坏了"就加一条。
 
+- 为什么用 POST + @Res() 手写 SSE，而不是 NestJS 的 @Sse()？
+  三个原因，从硬到软：
+
+  1. **`@Sse()` 注册的是 GET 路由。** 它本质上是 `@Get()` + SSE 处理，设计上是配合浏览器
+     原生 `EventSource` 的 —— 而 **`EventSource` 只支持 GET、不能带请求体**。
+     但提问必须传 `{ question }`，且语义上是 POST（有副作用：会落库两条消息）。
+  2. **返回类型对不上。** `@Sse()` 要求 `Observable<MessageEvent>`，我们是
+     `AsyncGenerator<ChatEvent>`，要包一层转换；而且 `MessageEvent` 的 `type` 是给 SSE 的
+     `event:` 字段用的，我们用的是「单 `data:` 行 + JSON 里带 type」，用不上。
+  3. **代价要认清楚。** `@Res()` 会失去 Nest 的响应处理链（拦截器 + 异常过滤器），
+     所以两件事必须自己做：
+     - 可能抛错的前置放到 `res.flushHeaders()` **之前** —— 这就是 `prepare` / `stream`
+       拆分的由来。挪到之后，404 就会变成「200 + 一截流」
+     - 自己保证 `res.end()`（放在 `finally` 里）
+
+  顺带：**前端同样不能用 `EventSource`**，只能用 `fetch` + 手动解析。两个容易踩的点：
+  - `TextDecoder` 要传 `{ stream: true }`，否则中文字被网络分片切开时会乱码
+  - 必须自己维护 buffer 按 `\n\n` 切帧 —— 一个 chunk 可能包含多帧，也可能只有半帧
+
+  另外 5 个响应头各有用途，其中两个是「本机看不出问题、上线才炸」的类型：
+  `X-Accel-Buffering: no`（否则 nginx 会缓冲整个流，流式直接失效）；
+  `charset=utf-8`（否则中文流式输出乱码）。
+
 ## 7. 演进方向
 
 - SQLite → PostgreSQL + pgvector
@@ -368,3 +391,11 @@ refreshToken → 验签 → 校验 tokenType 与 jti 是否存在 → 判断 `re
 - 「我的登录设备」列表 + 强制下线指定设备
 - tokenVersion 让 access token 立即失效（配合 Redis 缓存）
 - 多实例部署时@Cron会重复执行,需要分布式锁,启动时恢复同理,每个实例启动都会重置文档状态并开始处理(处理需要调用第三方模型,烧token).
+- SSE 客户端中途断开时，上游的 chatStream 不会立刻停，会继续烧 token → 需要在 `res.on('close')` 里主动取消
+- 前端消费 SSE：`fetch` + 手动解析（不能用 EventSource），注意 `TextDecoder` 的 `{ stream: true }` 和 buffer 切帧
+- 接入 Swagger（`@nestjs/swagger` + CLI plugin 自动推断 `@ApiProperty`），顺带反向验证 DTO 装饰器有没有写全
+- 智谱文档解析（非 txt / md 目前直接抛「暂不支持」）
+- health check 接口（容器探针要用）
+- 登录 / 注册限流（`@nestjs/throttler`），防爆破
+- CI：GitHub Actions 跑 lint + tsc + 单测 + e2e
+- 统一 Message.role 与 User.role 的类型约束（schema 里现在都是裸 String）
