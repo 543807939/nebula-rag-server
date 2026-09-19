@@ -1,0 +1,61 @@
+name: CI
+
+# 只跑 master 的直接提交、以及指向 master 的 PR。
+# 不用 `on: [push, pull_request]` —— 那样同一个 PR 会被触发两次。
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# 同一个分支连续提交时，取消上一次还没跑完的任务，省 CI 额度。
+# 这个项目 e2e 要跑将近 40 秒，连推几次会很浪费。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # --frozen-lockfile：lockfile 与 package.json 不一致时直接失败，
+      # 而不是在 CI 里悄悄改依赖 —— 「本地能跑、线上不一样」大多源于此
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 测试要有 env，但真实密钥不该进 CI。
+      # e2e 里 LlmService 被 overrideProvider 换成了假的，这些值不会被真正使用，
+      # 但 LlmService 的构造函数要求 apiKey 非空，所以需要占位值。
+      - name: 生成 .env
+        run: cp .env.example .env
+
+      # Prisma Client 生成到 src/generated/prisma（已被 gitignore），
+      # 所以 CI 里必须显式生成 —— 否则 tsc 第一步就因为找不到类型而失败
+      - name: 生成 Prisma Client
+        run: pnpm prisma:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: 类型检查
+        run: npx tsc --noEmit
+
+      - name: 单元测试
+        run: pnpm test
+
+      # e2e 会自己重建 prisma/test.db（见 test/setup-e2e.ts 的 globalSetup），
+      # 所以 CI 里不需要额外准备数据库
+      - name: e2e 测试
+        run: pnpm test:e2e
