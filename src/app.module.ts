@@ -16,6 +16,7 @@ import { DocumentModule } from './document/document.module.js';
 import { LlmModule } from './llm/llm.module.js';
 import { RetrievalModule } from './retrieval/retrieval.module.js';
 import { ConversationModule } from './conversation/conversation.module.js';
+import { ChatModule } from './chat/chat.module.js';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ConversationModule } from './conversation/conversation.module.js';
     LlmModule,
     RetrievalModule,
     ConversationModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [

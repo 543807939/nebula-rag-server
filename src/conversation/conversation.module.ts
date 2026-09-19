@@ -7,6 +7,6 @@ import { KnowledgeBaseModule } from '../knowledge-base/knowledge-base.module.js'
   imports: [KnowledgeBaseModule],
   controllers: [ConversationController],
   providers: [ConversationService],
-  exports: [],
+  exports: [ConversationService],
 })
 export class ConversationModule {}
