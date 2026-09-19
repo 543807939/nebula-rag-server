@@ -4,6 +4,7 @@ import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import { join } from 'node:path';
 import { AppModule } from '../../src/app.module.js';
 import { UPLOAD_ROOT } from '../../src/common/constants/storage.constant.js';
+import { setupSwagger } from '../../src/common/swagger.js';
 
 /**
  * 构建一个与 main.ts 行为一致的测试应用。
@@ -45,6 +46,10 @@ export async function createTestApp(
   });
 
   app.setGlobalPrefix('api');
+
+  // Swagger 也是 main.ts 的全局配置之一，同样必须在这里补 ——
+  // 否则 swagger.e2e-spec.ts 拿到的是 404，而不是「文档里少了什么」。
+  setupSwagger(app);
 
   await app.init();
   return app;
